@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# tailnet-add: хелпер на сервере tailnet. Печатает готовые команды для подключения устройств.
+#
+# Установка:  sudo install -m 755 tailnet-add /usr/local/bin/tailnet-add
+# Запуск:     sudo tailnet-add            # ключ на 1 час + команды для клиентов
+#             sudo tailnet-add 8h         # ключ с другим сроком
+#             sudo tailnet-add win        # только Windows-инструкция
+#             sudo tailnet-add mac        # только macOS
+#             sudo tailnet-add linux      # только Linux
+set -euo pipefail
+
+HS= docker
+command -v docker >/dev/null || { echo "docker не найден — этот хелпер ставится на сервер tailnet"; exit 1; }
+CMD=$(docker exec headscale headscale users list 2>/dev/null | awk 'NR==1{print $1; exit}')
+[ -n "$CMD" ] || { echo "пользователь headscale не найден"; exit 1; }
+
+EXPIRY=1h; WHAT=all
+for a in "$@"; do
+  case "$a" in win|mac|linux) WHAT="$a";; *) EXPIRY="$a";; esac
+done
+
+FQDN=$(docker exec headscale headscale config 2>/dev/null | grep -oP 'server_url: \K.*' | sed 's|https\?://||; s|/$||')
+[ -n "$FQDN" ] || FQDN=$(hostname -f)
+
+KEY=$(docker exec headscale headscale preauthkeys create --user "$CMD" --reusable --expiration "$EXPIRY")
+
+hdr() { echo; echo "===== $1 ====="; }
+
+if [ "$WHAT" = all ] || [ "$WHAT" = win ]; then hdr "Windows (админ-PowerShell)"
+cat <<EOF
+winget install Tailscale.Tailscale
+& "C:\Program Files\Tailscale\tailscale.exe" up --login-server=https://$FQDN --authkey=$KEY --accept-dns=true
+EOF
+fi
+if [ "$WHAT" = all ] || [ "$WHAT" = mac ]; then hdr "macOS (нужен standalone Tailscale, не App Store)"
+cat <<EOF
+brew install --cask tailscale
+sudo defaults write io.tailscale.ipn.macos ControlURL https://$FQDN
+open -a Tailscale   # разрешить сетевое расширение, затем в терминале:
+sudo /Applications/Tailscale.app/Contents/MacOS/Tailscale up --login-server=https://$FQDN --authkey=$KEY --accept-dns=true
+EOF
+fi
+if [ "$WHAT" = all ] || [ "$WHAT" = linux ]; then hdr "Linux (root)"
+cat <<EOF
+curl -fsSL https://tailscale.com/install.sh | sh
+tailscale up --login-server=https://$FQDN --authkey=$KEY --accept-dns=false
+EOF
+fi
+echo; echo "Ключ истекает через $EXPIRY. Узел появится в админке автоматически (approve не нужен)."
