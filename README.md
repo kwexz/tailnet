@@ -39,6 +39,34 @@ VPS (например lan.example.com, tailnet-IP 100.64.0.4)
 - **Порт 53 открыт только для tailnet** (UFW) — извне DNS-сервер не виден.
 - **Бэкапы**: cron ежедневно 04:30, `/opt/headscale/backups/headscale-<дата>.tar.gz` (конфиги + база).
 
+## Exit node (интернет через VPS)
+
+`setup-server.sh` автоматически делает VPS exit node: включает маршрутизацию, NAT, объявляет и одобряет маршруты `0.0.0.0/0` и `::/0`. После запуска сервер появляется в выборе exit node в Tailscale для Windows и macOS.
+
+- **Windows**: иконка Tailscale в системном трее → **Use exit node** → выбрать VPS.
+- **macOS**: иконка Tailscale в строке меню → **Use exit node** → выбрать VPS.
+- Командная строка: `tailscale set --exit-node=<IP-или-имя-VPS>`; отключить: `tailscale set --exit-node=`.
+
+При включении exit node весь интернет-трафик устройства выходит через публичный IP VPS. Трафик к локальной сети устройства по умолчанию недоступен; при необходимости включи **Allow LAN access** рядом с выбором exit node.
+
+Если меню macOS не показывает exit node, а команда ниже выводит VPS, это ограничение/кэш UI Tailscale.app при custom ControlURL, а не ошибка сервера. Выбрать exit node можно штатно через CLI:
+
+```bash
+sudo /Applications/Tailscale.app/Contents/MacOS/Tailscale set --exit-node=<tailnet-IP-VPS>
+# отключить:
+sudo /Applications/Tailscale.app/Contents/MacOS/Tailscale set --exit-node=
+```
+
+Проверка доступных exit node: `/Applications/Tailscale.app/Contents/MacOS/Tailscale exit-node list`.
+
+## Раздельное туннелирование
+
+Без exit node tailnet **уже является split tunnel**: через него идут только адреса устройств `100.64.0.0/10` и явно объявленные маршруты, обычный интернет-трафик остаётся у текущего провайдера/VPN.
+
+Exit node намеренно работает наоборот: через VPS идёт весь трафик (`0.0.0.0/0` и `::/0`). Простого встроенного правила «направить через exit node только конкретные сайты» нет: сеть маршрутизирует IP-префиксы, не доменные имена.
+
+Для отдельных IP или подсетей используется штатный subnet routing: Linux/VPS объявляет, например, `203.0.113.0/24`, Headscale одобряет маршрут, клиенты его принимают. Такой трафик пойдёт через VPS, всё остальное — напрямую. Для сайтов это ненадёжно: один домен часто использует меняющиеся IP и CDN. Если нужна выборочная маршрутизация именно по доменам, используй прокси (SOCKS/HTTP) или правила другого VPN, а не exit node.
+
 ## Развёртывание с нуля
 
 ### Сервер

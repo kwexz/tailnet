@@ -35,7 +35,7 @@ fi
 if [ "$WHAT" = all ] || [ "$WHAT" = mac ]; then hdr "macOS (нужен standalone Tailscale, не App Store)"
 cat <<EOF
 brew install --cask tailscale
-sudo defaults write io.tailscale.ipn.macos ControlURL https://$FQDN
+defaults write io.tailscale.ipn.macos ControlURL https://$FQDN
 open -a Tailscale   # разрешить сетевое расширение, затем в терминале:
 sudo /Applications/Tailscale.app/Contents/MacOS/Tailscale up --login-server=https://$FQDN --authkey=$KEY --accept-dns=true
 EOF

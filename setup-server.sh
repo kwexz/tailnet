@@ -373,7 +373,29 @@ fi
 nginx -t 2>/dev/null && systemctl enable --now nginx >/dev/null 2>&1 && systemctl reload nginx
 (crontab -l 2>/dev/null | grep -v 'certbot renew'; echo "0 3 * * * certbot renew --quiet --post-hook 'systemctl reload nginx'") | crontab -
 
-# ---------- 8. firewall ----------
+# ---------- 8. exit node ----------
+# VPS выпускает клиентский интернет-трафик через свой публичный интерфейс.
+# Headscale отдельно должен одобрить объявленные маршруты, иначе клиенты его не увидят.
+DEFAULT_IFACE=$(ip route show default | awk 'NR==1 {print $5}')
+if [ -n "$DEFAULT_IFACE" ] && tailscale ip -4 >/dev/null 2>&1; then
+  cat > /etc/sysctl.d/99-tailnet-exit-node.conf <<'EOF'
+net.ipv4.ip_forward = 1
+net.ipv6.conf.all.forwarding = 1
+EOF
+  sysctl --system >/dev/null
+  tailscale set --advertise-exit-node
+  VPS_NODE_ID=$(docker exec headscale headscale nodes list -o json | \
+    awk -v ip="$TAILNET_IP" '/"id":/ { gsub(/[^0-9]/, "", $0); id=$0 } index($0, "\"" ip "\"") { print id; exit }')
+  if [ -n "$VPS_NODE_ID" ]; then
+    docker exec headscale headscale nodes approve-routes --identifier "$VPS_NODE_ID" --routes '0.0.0.0/0,::/0' >/dev/null
+  else
+    warn "не удалось определить ID VPS-узла: одобри 0.0.0.0/0 и ::/0 в Headplane"
+  fi
+else
+  warn "VPS ещё не подключён к tailnet — exit node будет настроен при следующем запуске скрипта"
+fi
+
+# ---------- 9. firewall ----------
 ufw allow 22/tcp  >/dev/null 2>&1 || true
 ufw allow 80/tcp  >/dev/null 2>&1 || true
 ufw allow 443/tcp >/dev/null 2>&1 || true
@@ -381,18 +403,20 @@ ufw allow 3478/udp comment "headscale stun" >/dev/null 2>&1 || true
 if ip link show tailscale0 >/dev/null 2>&1; then
   ufw allow in on tailscale0 to any port 53 proto udp comment "tailnet DNS" >/dev/null 2>&1 || true
   ufw allow in on tailscale0 to any port 53 proto tcp comment "tailnet DNS tcp" >/dev/null 2>&1 || true
+  ufw route allow in on tailscale0 out on "$DEFAULT_IFACE" comment "tailnet exit node" >/dev/null 2>&1 || true
+  ufw route allow in on "$DEFAULT_IFACE" out on tailscale0 comment "tailnet exit node return" >/dev/null 2>&1 || true
 else
   warn "tailscale0 ещё нет — после подключения хоста к tailnet (шаг ниже) перезапусти скрипт для DNS-правил"
 fi
 ufw --force enable >/dev/null
 
-# ---------- 9. хелпер tailnet-add ----------
+# ---------- 10. хелпер tailnet-add ----------
 if [ -f "$(dirname "$0")/tailnet-add" ]; then
   install -m 755 "$(dirname "$0")/tailnet-add" /usr/local/bin/tailnet-add
   log "установлен /usr/local/bin/tailnet-add (печать команд подключения устройств)"
 fi
 
-# ---------- 10. сам VPS как узел tailnet ----------
+# ---------- 11. сам VPS как узел tailnet ----------
 if ! tailscale status >/dev/null 2>&1 || tailscale status 2>/dev/null | grep -q 'Logged out'; then
   systemctl enable --now tailscaled >/dev/null 2>&1 || true
   log "Хост ещё не в tailnet. Подключи его (нужен для DNS ${TAILNET_IP}):"
@@ -401,7 +425,7 @@ if ! tailscale status >/dev/null 2>&1 || tailscale status 2>/dev/null | grep -q 
   warn "после подключения: перезапусти этот скрипт (добавит UFW/DNS-правила и проверки)"
 fi
 
-# ---------- 11. бэкапы ----------
+# ---------- 12. бэкапы ----------
 (crontab -l 2>/dev/null | grep -v "headscale-\\\\(date"; echo "30 4 * * * tar czf ${HS_DIR}/backups/headscale-\$(date +\%F).tar.gz -C ${HS_DIR} config data headplane-data 2>/dev/null") | crontab -
 
 # ---------- состояние ----------
