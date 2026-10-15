@@ -1,0 +1,2 @@
+# ---> docs: do not commit local client state
+.setup-state.ps1

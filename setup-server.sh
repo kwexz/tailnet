@@ -8,6 +8,7 @@
 #   - при повторном запуске видит, что уже установлено, и предлагает только перенастройку.
 
 set -euo pipefail
+umask 077  # секреты (api_key, cookie_secret, htpasswd, state) не должны быть читаемы всеми
 
 HS_DIR=/opt/headscale
 STATE_FILE="$HS_DIR/.setup-state"
@@ -18,6 +19,7 @@ warn() { echo -e "\e[33m[setup]\e[0m $*"; }
 
 # ---------- читаем прошлое состояние (идемпотентность) ----------
 HOSTNAME_FQDN=""; BASE_DOMAIN=""; EMAIL=""; TAILNET_IP=""; HS_USER="tailadmin"
+# shellcheck disable=SC1091 # путь фиксирован, файл создаётся этим же скриптом под root с правами 600
 [ -f "$STATE_FILE" ] && source "$STATE_FILE"
 FIRST_RUN=0; [ -z "$HOSTNAME_FQDN" ] && FIRST_RUN=1
 
@@ -60,7 +62,7 @@ if [ "$FIRST_RUN" = 1 ] || [ "$reconf" = "y" ] || [ "$reconf" = "Y" ]; then
   echo
   echo "2) Базовая зона DNS, которую tailnet будет резолвить сам (split-DNS)."
   echo "   Обычно это домен, где живёт имя сервера: для lan.example.com — example.com."
-  BASE_DOMAIN_GUESS="${BASE_DOMAIN:-$(echo "$HOSTNAME_FQDN" | sed 's/^[^.]*\.//')}"
+  BASE_DOMAIN_GUESS="${BASE_DOMAIN:-${HOSTNAME_FQDN#*.}}"
   ask "   Базовая зона" BASE_DOMAIN "$BASE_DOMAIN_GUESS"
 
   echo
@@ -97,7 +99,7 @@ if [ "$NEED_AUTH" = "yes" ]; then
     [ "$pw1" = "$pw2" ] && { PW="$pw1"; break; }
     warn "Пароли не совпали"
   done
-  printf '%s:%s\n' "$AUTH_USER" "$(openssl passwd -apr1 "$PW")" > /etc/nginx/.htpasswd_headplane
+  printf '%s:%s\n' "$AUTH_USER" "$(openssl passwd -6 "$PW")" > /etc/nginx/.htpasswd_headplane
   chmod 640 /etc/nginx/.htpasswd_headplane; chown root:www-data /etc/nginx/.htpasswd_headplane
   log "basic-auth записан ($AUTH_USER)"
 elif [ -f /etc/nginx/.htpasswd_headplane ]; then
@@ -180,6 +182,7 @@ EOF
   "tagOwners": {},
   "autoApprovers": {}
 }' > "$HS_DIR/config/policy.hujson"
+  chmod 600 "$HS_DIR/config/config.yaml" "$HS_DIR/config/policy.hujson"
 else
   log "config.yaml уже есть — не трогаю"
 fi
@@ -259,6 +262,7 @@ integration:
   docker:
     enabled: false
 EOF
+  chmod 600 "$HS_DIR/config/headplane.yaml"
 else
   sed -i "s|api_key: .*|api_key: \"${HS_API_KEY}\"|" "$HS_DIR/config/headplane.yaml"
   log "headplane.yaml: api_key обновлён"
@@ -426,7 +430,7 @@ if ! tailscale status >/dev/null 2>&1 || tailscale status 2>/dev/null | grep -q 
 fi
 
 # ---------- 12. бэкапы ----------
-(crontab -l 2>/dev/null | grep -v "headscale-\\\\(date"; echo "30 4 * * * tar czf ${HS_DIR}/backups/headscale-\$(date +\%F).tar.gz -C ${HS_DIR} config data headplane-data 2>/dev/null") | crontab -
+(crontab -l 2>/dev/null | grep -v "backups/headscale-"; echo "30 4 * * * tar czf ${HS_DIR}/backups/headscale-\$(date +\%F).tar.gz -C ${HS_DIR} config data headplane-data 2>/dev/null") | crontab -
 
 # ---------- состояние ----------
 cat > "$STATE_FILE" <<EOF
@@ -437,6 +441,7 @@ TAILNET_IP="$TAILNET_IP"
 HS_USER="$HS_USER"
 HS_USER_ID="$HS_USER_ID"
 EOF
+chmod 600 "$STATE_FILE"
 
 # ---------- проверки + вывод ----------
 log "=== Проверки ==="

@@ -20,7 +20,9 @@ TS_APP=/Applications/Tailscale.app/Contents/MacOS/Tailscale
 echo "=== Настройка Mac-клиента tailnet ==="
 [ -z "$SERVER_URL" ] && read -r -p "1) Адрес сервера (например https://lan.example.com): " SERVER_URL
 case "$SERVER_URL" in http*) ;; *) SERVER_URL="https://$SERVER_URL";; esac
-HOST_FQDN=$(echo "$SERVER_URL" | sed -E 's|^https?://||; s|/.*$||; s|:[0-9]+$||')
+HOST_FQDN="${SERVER_URL#*://}"
+HOST_FQDN="${HOST_FQDN%%/*}"
+HOST_FQDN="${HOST_FQDN%%:*}"
 
 echo "[1/4] Tailscale.app (standalone)..."
 if [ ! -d /Applications/Tailscale.app ]; then

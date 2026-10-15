@@ -9,15 +9,26 @@
 #             sudo tailnet-add linux      # только Linux
 set -euo pipefail
 
-HS= docker
 command -v docker >/dev/null || { echo "docker не найден — этот хелпер ставится на сервер tailnet"; exit 1; }
-CMD=$(docker exec headscale headscale users list 2>/dev/null | awk 'NR==1{print $1; exit}')
+# ID пользователя: сначала ищем имя из состояния сервера, иначе первая числовая
+# строка списка (пропускаем заголовок таблицы `headscale users list`).
+HS_USER_NAME="$(grep -E '^HS_USER=' /opt/headscale/.setup-state 2>/dev/null | cut -d= -f2- | tr -d '"' || true)"
+CMD=""
+if [ -n "${HS_USER_NAME:-}" ]; then
+  CMD=$(docker exec headscale headscale users list 2>/dev/null | awk -v u="$HS_USER_NAME" '$0 ~ u {print $1; exit}')
+fi
+if [ -z "${CMD:-}" ]; then
+  CMD=$(docker exec headscale headscale users list 2>/dev/null | awk 'NR>1 && $1 ~ /^[0-9]+$/ {print $1; exit}')
+fi
 [ -n "$CMD" ] || { echo "пользователь headscale не найден"; exit 1; }
 
 EXPIRY=1h; WHAT=all
 for a in "$@"; do
   case "$a" in win|mac|linux) WHAT="$a";; *) EXPIRY="$a";; esac
 done
+if ! [[ "$EXPIRY" =~ ^[0-9]+[mhd]$ ]]; then
+  echo "Некорректный срок ключа: $EXPIRY (примеры: 1h, 8h, 7d)" >&2; exit 1
+fi
 
 FQDN=$(docker exec headscale headscale config 2>/dev/null | grep -oP 'server_url: \K.*' | sed 's|https\?://||; s|/$||')
 [ -n "$FQDN" ] || FQDN=$(hostname -f)

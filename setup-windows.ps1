@@ -14,7 +14,7 @@ if (Test-Path $StateFile) { . $StateFile }
 
 function Save-State {
     param($s)
-    "ServerUrl='$s'" | Set-Content -Encoding UTF8 $StateFile
+    "ServerUrl='$($s -replace "'","''")'" | Set-Content -Encoding UTF8 $StateFile
 }
 
 # ---------- диалоги ----------
