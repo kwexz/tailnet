@@ -19,7 +19,7 @@ warn() { echo -e "\e[33m[setup]\e[0m $*"; }
 
 # ---------- читаем прошлое состояние (идемпотентность) ----------
 HOSTNAME_FQDN=""; BASE_DOMAIN=""; EMAIL=""; TAILNET_IP=""; HS_USER="tailadmin"
-# shellcheck disable=SC1091 # путь фиксирован, файл создаётся этим же скриптом под root с правами 600
+# shellcheck disable=SC1090 # путь фиксирован, файл создаётся этим же скриптом под root с правами 600
 [ -f "$STATE_FILE" ] && source "$STATE_FILE"
 FIRST_RUN=0; [ -z "$HOSTNAME_FQDN" ] && FIRST_RUN=1
 
