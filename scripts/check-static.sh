@@ -22,6 +22,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STRICT="${STRICT:-0}"
 
 SH_FILES=(
+  "$ROOT/setup-ssh.sh"
   "$ROOT/setup-server.sh"
   "$ROOT/setup-linux.sh"
   "$ROOT/setup-mac.sh"

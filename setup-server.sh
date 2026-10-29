@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env bash
+#!/usr/bin/env bash
 # Универсальная настройка VPS под self-hosted Tailscale-совместимую сеть:
 #   Headscale (control plane) + Headplane (web-админка) + dnsmasq (split-DNS) + nginx (TLS).
 #
